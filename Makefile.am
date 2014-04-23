@@ -312,6 +312,10 @@ endif
 
 endif
 
+if USE_COINTERRA
+bfgminer_SOURCES += driver-cointerra.c driver-cointerra.h
+endif
+
 if USE_HASHFAST
 bfgminer_SOURCES += driver-hashfast.c
 endif
