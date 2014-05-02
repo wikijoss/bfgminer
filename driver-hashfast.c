@@ -218,7 +218,7 @@ const char *hashfast_set_clock(struct cgpu_info * const proc, const char * const
 }
 
 static const struct bfg_set_device_definition hashfast_set_device_funcs_probe[] = {
-	{"clock", hashfast_set_clock, "clock frequency (can only be set at startup, with --set-device)"},
+	{"clock", hashfast_set_clock, "clock frequency"},
 	{NULL},
 };
 
@@ -259,6 +259,7 @@ bool hashfast_detect_one(const char * const devpath)
 		        __func__, devpath, pmsg->data[8]);
 		goto err;
 	}
+	const uint16_t fwrev = upk_u16le(pmsg->data, 0);
 	
 	if (serial_claim_v(devpath, &hashfast_ums_drv))
 		return false;
@@ -273,6 +274,10 @@ bool hashfast_detect_one(const char * const devpath)
 		.device_data = pmsg,
 		.cutofftemp = 100,
 	};
+	
+	if (fwrev >= 0x0005 || !fwrev)
+		cgpu->set_device_funcs = hashfast_set_device_funcs;
+	
 	return add_cgpu(cgpu);
 
 err:
@@ -290,12 +295,14 @@ struct hashfast_dev_state {
 	uint8_t cores_per_chip;
 	int fd;
 	struct hashfast_chip_state *chipstates;
+	uint16_t fwrev;
 };
 
 struct hashfast_chip_state {
 	struct cgpu_info **coreprocs;
 	hashfast_isn_t last_isn;
 	float voltages[HASHFAST_MAX_VOLTAGES];
+	struct dclk_data dclk;
 };
 
 struct hashfast_core_state {
@@ -307,6 +314,19 @@ struct hashfast_core_state {
 	hashfast_isn_t last2_isn;
 	bool has_pending;
 	unsigned queued;
+};
+
+static
+const char *hashfast_set_clock_runtime(struct cgpu_info * const proc, const char * const optname, const char * const newvalue, char * const replybuf, enum bfg_set_device_replytype * const out_success)
+{
+	uint16_t * const clockp = proc->device_data;
+	*clockp = atoi(newvalue);
+	return NULL;
+}
+
+static const struct bfg_set_device_definition hashfast_set_device_funcs_probe[] = {
+	{"clock", hashfast_set_clock, "clock frequency"},
+	{NULL},
 };
 
 static
@@ -323,6 +343,7 @@ bool hashfast_init(struct thr_info * const master_thr)
 		.chipstates = chipstates,
 		.cores_per_chip = pmsg->coreaddr,
 		.fd = serial_open(dev->device_path, 0, 1, true),
+		.fwrev = upk_u16le(pmsg->data, 0),
 	};
 	
 	for (i = 0; i < pmsg->chipaddr; ++i)
